@@ -1,14 +1,13 @@
-module Bytes.Parser exposing
+module Bytes.FastParser exposing
     ( Parser, run, Error(..)
-    , succeed, fail, inContext
-    , unsignedInt8, unsignedInt16, unsignedInt32, signedInt8, signedInt16, signedInt32
-    , float32, float64
+    , succeed, fail
+    , unsignedInt8, unsignedInt16
+    , float32
     , string
     , bytes
-    , map, map2, map3, map4, map5
+    , map, map2
     , keep, ignore, skip
     , andThen, oneOf, repeat, Step(..), loop
-    , Position, position, startOfInput, randomAccess
     )
 
 {-| Parse `Bytes` with custom error reporting and context tracking.
@@ -72,22 +71,16 @@ import Bytes exposing (Bytes)
 import Bytes.Decode as Decode exposing (Decoder)
 
 
-{-| A concrete position in the input.
--}
-type Position
-    = Position Int
-
-
 {-| A parser which tracks a certain type of context, a certain type of error and
 produces a certain type of value.
 -}
-type Parser context error value
-    = Parser (State -> ParseResult context error value)
+type Parser error value
+    = Parser (State -> ParseResult error value)
 
 
-type ParseResult context error value
+type ParseResult error value
     = Good value State
-    | Bad (Error context error)
+    | Bad (Error error)
 
 
 {-| Describes errors that arise while parsing.
@@ -96,11 +89,10 @@ Custom errors happen through [`fail`](#fail), context tracking happens through
 [`inContext`](#inContext).
 
 -}
-type Error context error
-    = InContext { label : context, start : Int } (Error context error)
-    | OutOfBounds { at : Int, bytes : Int }
+type Error error
+    = OutOfBounds { at : Int, bytes : Int }
     | Custom { at : Int } error
-    | BadOneOf { at : Int } (List (Error context error))
+    | BadOneOf { at : Int } (List (Error error))
 
 
 type alias State =
@@ -109,165 +101,9 @@ type alias State =
     }
 
 
-{-| Always succeed with the given value.
-
-    import Bytes.Encode as E
-    import Bytes.Parser as P
-
-
-    E.encode (E.sequence [])
-        |> P.run (P.succeed "hi there")
-    --> Ok "hi there"
-
--}
-succeed : value -> Parser context error value
+succeed : value -> Parser error value
 succeed val =
     Parser (Good val)
-
-
-{-| Produce the current offset in the input.
-
-    import Bytes.Encode as E
-    import Bytes.Parser as P
-
-
-    E.encode (E.string "hello")
-        |> P.run P.position
-    --> Ok P.startOfInput
-
-
-    parser : P.Parser c e P.Position
-    parser =
-        P.succeed identity
-            |> P.skip 2
-            |> P.keep P.position
-
-
-    E.encode (E.string "hello")
-        |> P.run parser
-        |> Result.map ((==) P.startOfInput)
-    --> Ok False
-
--}
-position : Parser context error Position
-position =
-    Parser <| \state -> Good (Position state.offset) state
-
-
-{-| Position signifying the start of input.
-
-This is mostly useful when feeding absolute offsets to
-[`randomAccess`](#randomAccess).
-
--}
-startOfInput : Position
-startOfInput =
-    Position 0
-
-
-{-| Read some data based on an offset.
-
-This is meant for "out of band" reading - the resulting parser will resume
-reading where you left off.
-
-As an example, consider we have some data like this:
-
-  - An integer specifying the length of a string
-  - An offset to the string, relative to the entire sequence
-  - A number we also need
-
-Which can be represented like so:
-
-    import Bytes exposing (Bytes)
-    import Bytes.Encode as E
-
-    input : Bytes
-    input =
-        [ E.unsignedInt8 5 -- length of the string we're interested in
-        , E.unsignedInt8 15 -- absolute offset to the string
-        , E.unsignedInt8 6 -- another number we're interested in
-        , E.string (String.repeat 12 "\u{0000}") -- buffer. Its content is irrelevant.
-        , E.string "hello" -- our actual string
-        ]
-            |> E.sequence
-            |> E.encode
-
-Now, to decode this, let's first try decoding the `String` by decoding the
-length and offset, and then reading the data:
-
-    import Bytes.Parser as P exposing (Parser)
-
-
-    string : Parser c e String
-    string =
-        P.succeed Tuple.pair
-            |> P.keep P.unsignedInt8
-            |> P.keep P.unsignedInt8
-            |> P.andThen readStringWithLengthAndOffset
-
-
-    readStringWithLengthAndOffset : ( Int, Int ) -> Parser c e String
-    readStringWithLengthAndOffset ( length, offset ) =
-        P.randomAccess
-            { offset = offset, relativeTo = P.startOfInput }
-            (P.string length)
-
-
-    P.run string input
-    --> Ok "hello"
-
-Now, to illustrate the "resume" behaviour, let's use the above parser, and also
-read the interesting number:
-
-    final : Parser c e { string : String, number : Int }
-    final =
-        P.succeed (\s n -> { string = s, number = n })
-            |> P.keep string
-            |> P.keep P.unsignedInt8
-
-
-    P.run final input
-    --> Ok { string = "hello", number = 6 }
-
-The trick here is that parsing continues its sequential behaviour, with the
-`randomAccess` parser running in a separate context.
-
-If the offset isn't absolute, but relative, we can use a similar setup, with the
-addition of specifying the position we want the offset to be relative to using
-[`position`](#position).
-
-    relativeString : Parser c e String
-    relativeString =
-        P.succeed readRelativeString
-            |> P.keep P.unsignedInt8
-            |> P.keep P.position
-            |> P.keep P.unsignedInt8
-            |> P.andThen identity
-
-    readRelativeString : Int -> P.Position -> Int -> Parser c e String
-    readRelativeString length marker offset =
-        P.randomAccess
-            { offset = offset, relativeTo = marker }
-            (P.string length)
-
--}
-randomAccess :
-    { offset : Int, relativeTo : Position }
-    -> Parser context error value
-    -> Parser context error value
-randomAccess config (Parser f) =
-    Parser <|
-        \state ->
-            let
-                (Position start) =
-                    config.relativeTo
-            in
-            case f { state | offset = start + config.offset } of
-                Good v newState ->
-                    Good v { newState | offset = state.offset }
-
-                Bad e ->
-                    Bad e
 
 
 {-| A Parser that always fails with the given error.
@@ -304,54 +140,9 @@ expect the offset to be "before" reading that byte. That's not quite what
 already!
 
 -}
-fail : error -> Parser context error value
+fail : error -> Parser error value
 fail e =
     Parser <| \state -> Bad (Custom { at = state.offset } e)
-
-
-{-| Add context to errors that may occur during parsing.
-
-Adding context makes it easier to debug where issues occur.
-
-    import Bytes.Encode as E
-    import Bytes.Parser as P
-
-
-    type Context = Header | DataArea
-
-
-    E.sequence []
-        |> E.encode
-        |> P.run (P.inContext Header P.unsignedInt8)
-    --> Err
-    -->    (P.InContext
-    -->        { label = Header
-    -->        , start = 0
-    -->        }
-    -->        (P.OutOfBounds { at = 0, bytes = 1})
-    -->    )
-
--}
-inContext :
-    context
-    -> Parser context error value
-    -> Parser context error value
-inContext label (Parser f) =
-    Parser
-        (\state ->
-            case f state of
-                Good v s ->
-                    Good v s
-
-                Bad e ->
-                    Bad
-                        (InContext
-                            { label = label
-                            , start = state.offset
-                            }
-                            e
-                        )
-        )
 
 
 {-| Run the given parser on the provided bytes and the result.
@@ -373,9 +164,9 @@ inContext label (Parser f) =
 
 -}
 run :
-    Parser context error value
+    Parser error value
     -> Bytes
-    -> Result (Error context error) value
+    -> Result (Error error) value
 run (Parser f) input =
     let
         initialState : State
@@ -406,8 +197,8 @@ run (Parser f) input =
 -}
 map :
     (a -> b)
-    -> Parser context error a
-    -> Parser context error b
+    -> Parser error a
+    -> Parser error b
 map t (Parser f) =
     Parser <|
         \state ->
@@ -444,9 +235,9 @@ actual data:
 
 -}
 andThen :
-    (a -> Parser context error b)
-    -> Parser context error a
-    -> Parser context error b
+    (a -> Parser error b)
+    -> Parser error a
+    -> Parser error b
 andThen toParserB (Parser f) =
     Parser <|
         \state ->
@@ -501,50 +292,11 @@ achieved using a combination of [`succeed`](#succeed) and [`keep`](#keep).
 -}
 map2 :
     (x -> y -> z)
-    -> Parser context error x
-    -> Parser context error y
-    -> Parser context error z
+    -> Parser error x
+    -> Parser error y
+    -> Parser error z
 map2 f parserX parserY =
     parserX |> andThen (\x -> parserY |> andThen (\y -> succeed (f x y)))
-
-
-{-| -}
-map3 :
-    (w -> x -> y -> z)
-    -> Parser context error w
-    -> Parser context error x
-    -> Parser context error y
-    -> Parser context error z
-map3 f parserW parserX parserY =
-    map2 f parserW parserX
-        |> keep parserY
-
-
-{-| -}
-map4 :
-    (v -> w -> x -> y -> z)
-    -> Parser context error v
-    -> Parser context error w
-    -> Parser context error x
-    -> Parser context error y
-    -> Parser context error z
-map4 f parserV parserW parserX parserY =
-    map3 f parserV parserW parserX
-        |> keep parserY
-
-
-{-| -}
-map5 :
-    (u -> v -> w -> x -> y -> z)
-    -> Parser context error u
-    -> Parser context error v
-    -> Parser context error w
-    -> Parser context error x
-    -> Parser context error y
-    -> Parser context error z
-map5 f parserU parserV parserW parserX parserY =
-    map4 f parserU parserV parserW parserX
-        |> keep parserY
 
 
 {-| Keep the value produced by a parser in a pipeline.
@@ -574,9 +326,9 @@ are parsed is apparent.
 
 -}
 keep :
-    Parser context error a
-    -> Parser context error (a -> b)
-    -> Parser context error b
+    Parser error a
+    -> Parser error (a -> b)
+    -> Parser error b
 keep val fun =
     map2 (<|) fun val
 
@@ -625,9 +377,9 @@ you can use this for checking the value of something, without using the value.
 
 -}
 ignore :
-    Parser context error ignore
-    -> Parser context error keep
-    -> Parser context error keep
+    Parser error ignore
+    -> Parser error keep
+    -> Parser error keep
 ignore skipper keeper =
     map2 always keeper skipper
 
@@ -638,7 +390,7 @@ This is similar to `ignore`, but rather than parsing a value and discarding it,
 this just goes ahead and skips them altogether.
 
 -}
-skip : Int -> Parser context error value -> Parser context error value
+skip : Int -> Parser error value -> Parser error value
 skip nBytes =
     ignore (bytes nBytes)
 
@@ -648,16 +400,16 @@ skip nBytes =
 Note that this uses backtracking when a parser fails after making some progress.
 
 -}
-oneOf : List (Parser context error value) -> Parser context error value
+oneOf : List (Parser error value) -> Parser error value
 oneOf options =
     Parser (oneOfHelp options [])
 
 
 oneOfHelp :
-    List (Parser context error value)
-    -> List (Error context error)
+    List (Parser error value)
+    -> List (Error error)
     -> State
-    -> ParseResult context error value
+    -> ParseResult error value
 oneOfHelp options errors state =
     case options of
         [] ->
@@ -722,18 +474,18 @@ case) and to hint at the mental model, which isn't unlike a `fold`.
 
 -}
 loop :
-    (state -> Parser context error (Step state a))
+    (state -> Parser error (Step state a))
     -> state
-    -> Parser context error a
+    -> Parser error a
 loop toNext initialState =
     Parser (loopHelp initialState toNext)
 
 
 loopHelp :
     state
-    -> (state -> Parser context error (Step state a))
+    -> (state -> Parser error (Step state a))
     -> State
-    -> ParseResult context error a
+    -> ParseResult error a
 loopHelp loopState toNext state =
     let
         (Parser next) =
@@ -772,15 +524,15 @@ times to repeat something through a parser.
     --> Ok [ 0, 1, 2, 3, 4 ]
 
 -}
-repeat : Parser context error value -> Int -> Parser context error (List value)
+repeat : Parser error value -> Int -> Parser error (List value)
 repeat p nTimes =
     loop (repeatHelp p) ( nTimes, [] )
 
 
 repeatHelp :
-    Parser context error value
+    Parser error value
     -> ( Int, List value )
-    -> Parser context error (Step ( Int, List value ) (List value))
+    -> Parser error (Step ( Int, List value ) (List value))
 repeatHelp p ( cnt, acc ) =
     if cnt <= 0 then
         succeed (Done (List.reverse acc))
@@ -795,63 +547,28 @@ repeatHelp p ( cnt, acc ) =
 
 {-| Parse one byte into an integer from 0 to 255.
 -}
-unsignedInt8 : Parser context error Int
+unsignedInt8 : Parser error Int
 unsignedInt8 =
     fromDecoder Decode.unsignedInt8 1
 
 
-{-| Parse one byte into an integer from -128 to 127.
--}
-signedInt8 : Parser context error Int
-signedInt8 =
-    fromDecoder Decode.signedInt8 1
-
-
 {-| Parse two bytes into an integer from 0 to 65535.
 -}
-unsignedInt16 : Bytes.Endianness -> Parser context error Int
+unsignedInt16 : Bytes.Endianness -> Parser error Int
 unsignedInt16 bo =
     fromDecoder (Decode.unsignedInt16 bo) 2
 
 
-{-| Parse two bytes into an integer from -32768 to 32767.
--}
-signedInt16 : Bytes.Endianness -> Parser context error Int
-signedInt16 bo =
-    fromDecoder (Decode.signedInt16 bo) 2
-
-
-{-| Parse four bytes into an integer from 0 to 4294967295.
--}
-unsignedInt32 : Bytes.Endianness -> Parser context error Int
-unsignedInt32 bo =
-    fromDecoder (Decode.unsignedInt32 bo) 4
-
-
-{-| Parse four bytes into an integer from -2147483648 to 2147483647.
--}
-signedInt32 : Bytes.Endianness -> Parser context error Int
-signedInt32 bo =
-    fromDecoder (Decode.signedInt32 bo) 4
-
-
 {-| Parse 4 bytes into a Float.
 -}
-float32 : Bytes.Endianness -> Parser context error Float
+float32 : Bytes.Endianness -> Parser error Float
 float32 bo =
     fromDecoder (Decode.float32 bo) 4
 
 
-{-| Parse 8 bytes into a Float.
--}
-float64 : Bytes.Endianness -> Parser context error Float
-float64 bo =
-    fromDecoder (Decode.float64 bo) 8
-
-
 {-| Parse `count` bytes as `Bytes`.
 -}
-bytes : Int -> Parser context error Bytes
+bytes : Int -> Parser error Bytes
 bytes count =
     fromDecoder (Decode.bytes count) count
 
@@ -873,16 +590,20 @@ always agree with the number of bytes that went into it!
     --> Ok "👍"
 
 -}
-string : Int -> Parser context error String
+string : Int -> Parser error String
 string byteCount =
     fromDecoder (Decode.string byteCount) byteCount
 
 
-fromDecoder : Decoder v -> Int -> Parser context error v
+fromDecoder : Decoder v -> Int -> Parser error v
 fromDecoder dec byteLength =
     Parser <|
         \state ->
-            case Decode.decode dec state.input of
+            let
+                combine =
+                    Decode.map2 (\_ x -> x) (Decode.bytes state.offset) dec
+            in
+            case Decode.decode combine state.input of
                 Just res ->
                     Good res { offset = state.offset + byteLength, input = state.input }
 
