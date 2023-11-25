@@ -887,7 +887,7 @@ fromDecoder dec byteLength =
             let
                 combined : Decoder v
                 combined =
-                    Decode.map2 (always identity) (Decode.bytes state.offset) dec
+                    Decode.map2 (\_ x -> x) (Decode.bytes state.offset) dec
             in
             case Decode.decode combined state.input of
                 Just res ->
