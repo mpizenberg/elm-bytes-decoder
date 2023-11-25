@@ -1,8 +1,9 @@
-module Main exposing (basic)
+module Main exposing (basic, loop)
 
 -- (basic, loop, repeat)
 
 import Bytes as B
+import Bytes.Decode as D
 import Bytes.Encode as E
 import Bytes.FastParser as P
 import Expect
@@ -41,45 +42,49 @@ basic =
         ]
 
 
+loop : Test
+loop =
+    let
+        parser : P.Parser (List String)
+        parser =
+            P.unsignedInt8
+                |> P.andThen (\cnt -> P.loop ( cnt, [] ) loopHelper)
 
--- loop : Test
--- loop =
---     let
---         parser : P.Parser (List String)
---         parser =
---             P.unsignedInt8
---                 |> P.andThen (\cnt -> P.loop loopHelper ( cnt, [] ))
---         loopHelper :
---             ( Int, List String )
---             -> P.Parser e (P.Step ( Int, List String ) (List String))
---         loopHelper ( cnt, acc ) =
---             if cnt <= 0 then
---                 P.succeed (P.Done (List.reverse acc))
---             else
---                 P.string 3
---                     |> P.map (\s -> P.Loop ( cnt - 1, s :: acc ))
---     in
---     describe "loops"
---         [ test "When everything goes well" <|
---             \_ ->
---                 encodeSequence
---                     [ E.unsignedInt8 3
---                     , E.string "foo"
---                     , E.string "bar"
---                     , E.string "baz"
---                     ]
---                     |> P.run parser
---                     |> Expect.equal (Just [ "foo", "bar", "baz" ])
---         , test "failure propagates" <|
---             \_ ->
---                 encodeSequence
---                     [ E.unsignedInt8 3
---                     , E.string "foo"
---                     , E.string "bar"
---                     ]
---                     |> P.run parser
---                     |> Expect.equal Nothing
---         ]
+        loopHelper :
+            ( Int, List String )
+            -> P.Parser (D.Step ( Int, List String ) (List String))
+        loopHelper ( cnt, acc ) =
+            if cnt <= 0 then
+                P.succeed (D.Done (List.reverse acc))
+
+            else
+                P.string 3
+                    |> P.map (\s -> D.Loop ( cnt - 1, s :: acc ))
+    in
+    describe "loops"
+        [ test "When everything goes well" <|
+            \_ ->
+                encodeSequence
+                    [ E.unsignedInt8 3
+                    , E.string "foo"
+                    , E.string "bar"
+                    , E.string "baz"
+                    ]
+                    |> P.run parser
+                    |> Expect.equal (Just [ "foo", "bar", "baz" ])
+        , test "failure propagates" <|
+            \_ ->
+                encodeSequence
+                    [ E.unsignedInt8 3
+                    , E.string "foo"
+                    , E.string "bar"
+                    ]
+                    |> P.run parser
+                    |> Expect.equal Nothing
+        ]
+
+
+
 --
 --
 -- repeat : Test

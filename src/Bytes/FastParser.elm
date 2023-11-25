@@ -58,7 +58,7 @@ module Bytes.FastParser exposing (..)
 -}
 
 import Bytes exposing (Bytes)
-import Bytes.Decode as Decode exposing (Decoder)
+import Bytes.Decode as Decode exposing (Decoder, Step)
 
 
 {-| A parser which tracks a certain type of context, a certain type of error and
@@ -165,32 +165,38 @@ map2 f parserX parserY =
 --                     Good v s
 --                 Bad e ->
 --                     oneOfHelp xs (e :: errors) state
--- type Step state a
---     = Loop state
---     | Done a
--- loop :
---     (state -> Parser (Step state a))
---     -> state
---     -> Parser  a
--- loop toNext initialState =
---     loopHelp initialState toNext
--- loopHelp :
---     state
---     -> (state -> Parser (Step state a))
---     -> State
---     -> ParseResult error a
--- loopHelp loopState toNext state =
---     let
---         (Parser next) =
---             toNext loopState
---     in
---     case next state of
---         Good (Loop newLoopState) newState ->
---             loopHelp newLoopState toNext newState
---         Good (Done v) newState ->
---             Good v newState
---         Bad e ->
---             Bad e
+
+
+loop : state -> (state -> Parser (Step state a)) -> Parser a
+loop initialState callback initialParserState =
+    let
+        parsifiedCallback : State -> state -> Decoder (Step state ( State, a ))
+        parsifiedCallback parserState state =
+            let
+                stepDecoder : Decoder ( State, Step state a )
+                stepDecoder =
+                    callback state parserState
+
+                moveParserStateIntoStep : ( State, Step state a ) -> Step state ( State, a )
+                moveParserStateIntoStep ( ps, step ) =
+                    stepMap (\a -> ( ps, a )) step
+            in
+            Decode.map moveParserStateIntoStep stepDecoder
+    in
+    Decode.loop initialState (parsifiedCallback initialParserState)
+
+
+stepMap : (a -> b) -> Step state a -> Step state b
+stepMap f step =
+    case step of
+        Decode.Loop state ->
+            Decode.Loop state
+
+        Decode.Done a ->
+            Decode.Done (f a)
+
+
+
 -- repeat : Parser error value -> Int -> Parser error (List value)
 -- repeat p nTimes =
 --     loop (repeatHelp p) ( nTimes, [] )
