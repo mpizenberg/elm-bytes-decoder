@@ -891,7 +891,7 @@ fromDecoder dec byteLength =
             in
             case Decode.decode combined state.input of
                 Just res ->
-                    Good res { state | offset = state.offset + byteLength }
+                    Good res { offset = state.offset + byteLength, input = state.input, stack = state.stack }
 
                 Nothing ->
                     Bad (OutOfBounds { at = state.offset, bytes = byteLength })
