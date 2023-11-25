@@ -83,12 +83,6 @@ type ParseResult error value
     | Bad (Error error)
 
 
-{-| Describes errors that arise while parsing.
-
-Custom errors happen through [`fail`](#fail), context tracking happens through
-[`inContext`](#inContext).
-
--}
 type Error error
     = OutOfBounds { at : Int, bytes : Int }
     | Custom { at : Int } error
@@ -101,68 +95,32 @@ type alias State =
     }
 
 
+fromDecoder : Decoder v -> Int -> Parser error v
+fromDecoder dec byteLength =
+    Parser <|
+        \state ->
+            let
+                combine =
+                    Decode.map2 (\_ x -> x) (Decode.bytes state.offset) dec
+            in
+            case Decode.decode combine state.input of
+                Just res ->
+                    Good res { offset = state.offset + byteLength, input = state.input }
+
+                Nothing ->
+                    Bad (OutOfBounds { at = state.offset, bytes = byteLength })
+
+
 succeed : value -> Parser error value
 succeed val =
     Parser (Good val)
 
 
-{-| A Parser that always fails with the given error.
-
-    import Bytes.Encode as E
-    import Bytes.Parser as P
-
-
-    type Error = SomeFailure
-
-
-    E.sequence []
-        |> E.encode
-        |> P.run (P.fail SomeFailure)
-    --> Err (P.Custom { at = 0 } SomeFailure)
-
-_Important note about using `fail` in `andThen`_:
-
-The offset the `Custom` constructor of `Error` is tagged with, is the offset the
-parser is at when `fail` is executed. When this happens inside and `andThen`, be
-aware that something was already read in order for there to be and `andThen` in
-the first place.
-
-For example, consider this:
-
-    E.unsignedInt8 1
-        |> E.encode
-        |> P.run (P.andThen (\_ -> P.fail "fail") P.unsignedInt8)
-    --> Err (P.Custom { at = 1 } "fail")
-
-We may have intended for the failure to be about the byte we just read, and
-expect the offset to be "before" reading that byte. That's not quite what
-`andThen` means, though! `andThen` means we parsed something successfully
-already!
-
--}
 fail : error -> Parser error value
 fail e =
     Parser <| \state -> Bad (Custom { at = state.offset } e)
 
 
-{-| Run the given parser on the provided bytes and the result.
-
-    import Bytes.Encode as E
-    import Bytes.Parser as P
-
-
-    E.string "hello"
-        |> E.encode
-        |> P.run (P.string 5)
-    --> Ok "hello"
-
-
-    E.string "hello"
-        |> E.encode
-        |> P.run (P.string 6)
-    --> Err (P.OutOfBounds { at = 0, bytes = 6 })
-
--}
 run :
     Parser error value
     -> Bytes
@@ -183,18 +141,6 @@ run (Parser f) input =
             Err e
 
 
-{-| Transform the value a parser produces
-
-    import Bytes.Encode as E
-    import Bytes.Parser as P
-
-
-    E.string "hello"
-        |> E.encode
-        |> P.run (P.map String.length (P.string 5))
-    --> Ok 5
-
--}
 map :
     (a -> b)
     -> Parser error a
@@ -210,30 +156,6 @@ map t (Parser f) =
                     Bad e
 
 
-{-| Parse one thing, and then parse another thing based on the first thing.
-
-This is very useful to make the content of your data drive your parser. As an
-example, consider a string encoded as the length of the string, followed by the
-actual data:
-
-    import Bytes.Encode as E
-    import Bytes.Parser as P exposing (Parser)
-
-
-    string : Parser c e String
-    string =
-        P.unsignedInt8 |> P.andThen P.string
-
-
-    [ E.unsignedInt8 5
-    , E.string "hello"
-    ]
-        |> E.sequence
-        |> E.encode
-        |> P.run string
-    --> Ok "hello"
-
--}
 andThen :
     (a -> Parser error b)
     -> Parser error a
@@ -253,43 +175,6 @@ andThen toParserB (Parser f) =
                     Bad e
 
 
-{-| Combine what 2 parsers produce into a single parser.
-
-    import Bytes exposing (Bytes)
-    import Bytes.Encode as E
-    import Bytes.Parser as P exposing (Parser)
-
-
-    input : Bytes
-    input =
-        [ E.unsignedInt8 3
-        , E.string "wat"
-        ]
-            |> E.sequence
-            |> E.encode
-
-
-    map2Example : Parser c e String
-    map2Example =
-        P.map2 String.repeat P.unsignedInt8 (P.string 3)
-
-
-    P.run map2Example input
-    --> Ok "watwatwat"
-
-Note that the effect of `map2` (and, in fact, every `map` variation) can also be
-achieved using a combination of [`succeed`](#succeed) and [`keep`](#keep).
-
-    equivalent : Parser c e String
-    equivalent =
-        P.succeed String.repeat
-            |> P.keep P.unsignedInt8
-            |> P.keep (P.string 3)
-
-    P.run equivalent input
-    --> Ok "watwatwat"
-
--}
 map2 :
     (x -> y -> z)
     -> Parser error x
@@ -299,32 +184,6 @@ map2 f parserX parserY =
     parserX |> andThen (\x -> parserY |> andThen (\y -> succeed (f x y)))
 
 
-{-| Keep the value produced by a parser in a pipeline.
-
-Together with [`succeed`](#succeed) and [`ignore`](#ignore), this allows writing
-pretty flexible parsers in a straightforward manner: the order in which things
-are parsed is apparent.
-
-    import Bytes.Encode as E
-    import Bytes.Parser as P exposing (Parser)
-
-    parser : Parser c e (Int, Int)
-    parser =
-        P.succeed Tuple.pair
-            |> P.keep P.unsignedInt8
-            |> P.ignore P.unsignedInt8
-            |> P.keep P.unsignedInt8
-
-    [ E.unsignedInt8 12
-    , E.unsignedInt8 3
-    , E.unsignedInt8 45
-    ]
-        |> E.sequence
-        |> E.encode
-        |> P.run parser
-    --> Ok ( 12, 45 )
-
--}
 keep :
     Parser error a
     -> Parser error (a -> b)
@@ -333,49 +192,6 @@ keep val fun =
     map2 (<|) fun val
 
 
-{-| Ignore the value produced by a parser.
-
-Note that the parser must still succeed for the pipeline to succeed. This means
-you can use this for checking the value of something, without using the value.
-
-    import Bytes.Encode as E
-    import Bytes.Parser as P exposing (Parser)
-
-
-    type Error = Mismatch { expected : Int, actual : Int }
-
-
-    match : Int -> Parser c Error Int
-    match expected =
-        P.unsignedInt8
-            |> P.andThen
-                (\actual ->
-                    if expected == actual then
-                        P.succeed actual
-                    else
-                        P.fail (Mismatch { expected = expected, actual = actual})
-                )
-
-    parser : Parser c Error ()
-    parser =
-        P.succeed ()
-            |> P.ignore (match 66)
-
-
-    E.unsignedInt8 66
-        |> E.encode
-        |> P.run parser
-    --> Ok ()
-
-
-    E.unsignedInt8 44
-        |> E.encode
-        |> P.run parser
-    --> Mismatch { expected = 66, actual = 44 }
-    -->   |> P.Custom { at = 1 }
-    -->   |> Err
-
--}
 ignore :
     Parser error ignore
     -> Parser error keep
@@ -384,22 +200,11 @@ ignore skipper keeper =
     map2 always keeper skipper
 
 
-{-| Skip a number of bytes in a pipeline.
-
-This is similar to `ignore`, but rather than parsing a value and discarding it,
-this just goes ahead and skips them altogether.
-
--}
 skip : Int -> Parser error value -> Parser error value
 skip nBytes =
     ignore (bytes nBytes)
 
 
-{-| Tries a bunch of parsers and succeeds with the first one to succeed.
-
-Note that this uses backtracking when a parser fails after making some progress.
-
--}
 oneOf : List (Parser error value) -> Parser error value
 oneOf options =
     Parser (oneOfHelp options [])
@@ -424,55 +229,11 @@ oneOfHelp options errors state =
                     oneOfHelp xs (e :: errors) state
 
 
-{-| Represent the next step of a loop: Either continue looping with some new
-internal state, or finish while producing a value.
--}
 type Step state a
     = Loop state
     | Done a
 
 
-{-| Loop a parser until it declares it is done looping.
-
-The first argument is a function which, given some state, will usually parse
-some stuff and indicate it wants to either continue, or declare it is done and
-produce the final value. The second argument is the initial state for the loop.
-
-This particular order of parameters was chosen to make it somewhat easier to
-produce the initial state using a parser (which seems to be a fairly common use
-case) and to hint at the mental model, which isn't unlike a `fold`.
-
-    import Bytes.Encode as E
-    import Bytes.Parser as P
-
-    nullTerminatedString_ : (Int, P.Position) -> P.Parser c e (P.Step (Int, P.Position) String)
-    nullTerminatedString_ ( count, startPos ) =
-        P.unsignedInt8
-            |> P.andThen
-                (\byte ->
-                     if byte == 0x00 then
-                         P.string count
-                             |> P.randomAccess { offset = 0, relativeTo = startPos }
-                             |> P.map P.Done
-                     else
-                         P.succeed (P.Loop ( count + 1, startPos ))
-                )
-
-    nullTerminatedString : Parser c e String
-    nullTerminatedString =
-        P.map (Tuple.pair 0) P.position
-            |> P.andThen (P.loop nullTerminatedString_)
-
-
-    [ E.string "hello world!"
-    , E.unsignedInt8 0
-    ]
-        |> E.sequence
-        |> E.encode
-        |> P.run nullTerminatedString
-    --> Ok "hello world!"
-
--}
 loop :
     (state -> Parser error (Step state a))
     -> state
@@ -502,28 +263,6 @@ loopHelp loopState toNext state =
             Bad e
 
 
-{-| Repeat a given parser `count` times.
-
-The order of arguments is based on the common occurence of reading the number of
-times to repeat something through a parser.
-
-    import Bytes.Encode as E
-    import Bytes.Parser as P
-
-
-    intList : P.Parser c e (List Int)
-    intList =
-        P.unsignedInt8 |> P.andThen (P.repeat P.unsignedInt8)
-
-
-    [ 5, 0, 1, 2, 3, 4 ]
-        |> List.map E.unsignedInt8
-        |> E.sequence
-        |> E.encode
-        |> P.run intList
-    --> Ok [ 0, 1, 2, 3, 4 ]
-
--}
 repeat : Parser error value -> Int -> Parser error (List value)
 repeat p nTimes =
     loop (repeatHelp p) ( nTimes, [] )
@@ -593,19 +332,3 @@ always agree with the number of bytes that went into it!
 string : Int -> Parser error String
 string byteCount =
     fromDecoder (Decode.string byteCount) byteCount
-
-
-fromDecoder : Decoder v -> Int -> Parser error v
-fromDecoder dec byteLength =
-    Parser <|
-        \state ->
-            let
-                combine =
-                    Decode.map2 (\_ x -> x) (Decode.bytes state.offset) dec
-            in
-            case Decode.decode combine state.input of
-                Just res ->
-                    Good res { offset = state.offset + byteLength, input = state.input }
-
-                Nothing ->
-                    Bad (OutOfBounds { at = state.offset, bytes = byteLength })
