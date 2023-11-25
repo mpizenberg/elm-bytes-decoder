@@ -105,7 +105,6 @@ type Error context error
 
 type alias State =
     { offset : Int
-    , stack : List Int
     , input : Bytes
     }
 
@@ -382,7 +381,6 @@ run (Parser f) input =
         initialState : State
         initialState =
             { offset = 0
-            , stack = []
             , input = input
             }
     in
@@ -891,7 +889,7 @@ fromDecoder dec byteLength =
             in
             case Decode.decode combined state.input of
                 Just res ->
-                    Good res { offset = state.offset + byteLength, input = state.input, stack = state.stack }
+                    Good res { offset = state.offset + byteLength, input = state.input }
 
                 Nothing ->
                     Bad (OutOfBounds { at = state.offset, bytes = byteLength })
