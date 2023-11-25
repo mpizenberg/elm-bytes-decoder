@@ -196,19 +196,24 @@ stepMap f step =
             Decode.Done (f a)
 
 
+repeat : Parser value -> Int -> Parser (List value)
+repeat p nTimes =
+    loop ( nTimes, [] ) (repeatHelp p)
 
--- repeat : Parser error value -> Int -> Parser error (List value)
--- repeat p nTimes =
---     loop (repeatHelp p) ( nTimes, [] )
--- repeatHelp :
---     Parser error value
---     -> ( Int, List value )
---     -> Parser error (Step ( Int, List value ) (List value))
--- repeatHelp p ( cnt, acc ) =
---     if cnt <= 0 then
---         succeed (Done (List.reverse acc))
---     else
---         map (\v -> Loop ( cnt - 1, v :: acc )) p
+
+repeatHelp :
+    Parser value
+    -> ( Int, List value )
+    -> Parser (Step ( Int, List value ) (List value))
+repeatHelp p ( cnt, acc ) =
+    if cnt <= 0 then
+        succeed (Decode.Done (List.reverse acc))
+
+    else
+        map (\v -> Decode.Loop ( cnt - 1, v :: acc )) p
+
+
+
 -- Basics
 
 
@@ -226,11 +231,21 @@ unsignedInt16 bo =
     fromDecoder (Decode.unsignedInt16 bo) 2
 
 
+unsignedInt32 : Bytes.Endianness -> Parser Int
+unsignedInt32 bo =
+    fromDecoder (Decode.unsignedInt32 bo) 4
+
+
 {-| Parse 4 bytes into a Float.
 -}
 float32 : Bytes.Endianness -> Parser Float
 float32 bo =
     fromDecoder (Decode.float32 bo) 4
+
+
+float64 : Bytes.Endianness -> Parser Float
+float64 bo =
+    fromDecoder (Decode.float64 bo) 8
 
 
 {-| Parse `count` bytes as `Bytes`.

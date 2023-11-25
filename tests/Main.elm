@@ -1,6 +1,4 @@
-module Main exposing (basic, loop)
-
--- (basic, loop, repeat)
+module Main exposing (basic, loop, repeat)
 
 import Bytes as B
 import Bytes.Decode as D
@@ -84,26 +82,23 @@ loop =
         ]
 
 
-
---
---
--- repeat : Test
--- repeat =
---     test "repeat repeats" <|
---         \_ ->
---             let
---                 parser : P.Parser e (List String)
---                 parser =
---                     P.andThen (P.repeat (P.string 3)) P.unsignedInt8
---             in
---             encodeSequence
---                 [ E.unsignedInt8 3
---                 , E.string "foo"
---                 , E.string "bar"
---                 , E.string "baz"
---                 ]
---                 |> P.run parser
---                 |> Expect.equal (Ok [ "foo", "bar", "baz" ])
+repeat : Test
+repeat =
+    test "repeat repeats" <|
+        \_ ->
+            let
+                parser : P.Parser (List String)
+                parser =
+                    P.andThen (P.repeat (P.string 3)) P.unsignedInt8
+            in
+            encodeSequence
+                [ E.unsignedInt8 3
+                , E.string "foo"
+                , E.string "bar"
+                , E.string "baz"
+                ]
+                |> P.run parser
+                |> Expect.equal (Just [ "foo", "bar", "baz" ])
 
 
 encodeSequence : List E.Encoder -> B.Bytes
