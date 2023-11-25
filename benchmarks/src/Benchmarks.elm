@@ -4,6 +4,7 @@ import Benchmark exposing (Benchmark)
 import Benchmark.Runner exposing (BenchmarkProgram, program)
 import BytesBenchmarks
 import ParserBenchmarks
+import FastParserBenchmarks
 
 
 elmBytes =
@@ -23,11 +24,13 @@ main =
                 elmBytes
                 BytesBenchmarks.decodeList
                 zwiliasElmBytesParser
-                ParserBenchmarks.decodeList
+                -- ParserBenchmarks.decodeList
+                FastParserBenchmarks.decodeList
             , Benchmark.compare
                 "Decode list with 1000 floats"
                 elmBytes
                 BytesBenchmarks.decodeLongList
                 zwiliasElmBytesParser
-                ParserBenchmarks.decodeLongList
+                -- ParserBenchmarks.decodeLongList
+                FastParserBenchmarks.decodeLongList
             ]
