@@ -90,7 +90,8 @@ repeat =
             let
                 parser : P.Decoder (List String)
                 parser =
-                    P.andThen (\count -> P.repeat count (P.string 3)) P.unsignedInt8
+                    P.unsignedInt8
+                        |> P.andThen (P.repeat (P.string 3))
             in
             encodeSequence
                 [ E.unsignedInt8 3
@@ -139,7 +140,7 @@ oneOf =
                     |> Expect.equal (Just "bar")
         , test "foobarbaz" <|
             \_ ->
-                P.run (P.repeat 3 oneOfFooBarBaz) (E.encode <| E.string "foobarbaz...")
+                P.run (P.repeat oneOfFooBarBaz 3) (E.encode <| E.string "foobarbaz...")
                     |> Expect.equal (Just [ "foo", "bar", "baz" ])
         ]
 
