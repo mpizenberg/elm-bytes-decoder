@@ -1,36 +1,25 @@
-module Benchmarks exposing (..)
+module Benchmarks exposing (main)
 
 import Benchmark exposing (Benchmark)
 import Benchmark.Runner exposing (BenchmarkProgram, program)
 import BytesBenchmarks
-import ParserBenchmarks
-import FastParserBenchmarks
-
-
-elmBytes =
-    "elm/bytes"
-
-
-zwiliasElmBytesParser =
-    "zwilias/elm-bytes-parser"
+import BranchableBenchmarks
 
 
 main : BenchmarkProgram
 main =
     program <|
-        Benchmark.describe (elmBytes ++ " vs " ++ zwiliasElmBytesParser)
+        Benchmark.describe ("elm/bytes vs mpizenberg/elm-bytes-decoder")
             [ Benchmark.compare
                 "Decode list with 10 floats"
-                elmBytes
+                "elm/bytes"
                 BytesBenchmarks.decodeList
-                zwiliasElmBytesParser
-                -- ParserBenchmarks.decodeList
-                FastParserBenchmarks.decodeList
+                "mpizenberg/elm-bytes-decoder"
+                BranchableBenchmarks.decodeList
             , Benchmark.compare
                 "Decode list with 1000 floats"
-                elmBytes
+                "elm/bytes"
                 BytesBenchmarks.decodeLongList
-                zwiliasElmBytesParser
-                -- ParserBenchmarks.decodeLongList
-                FastParserBenchmarks.decodeLongList
+                "mpizenberg/elm-bytes-decoder"
+                BranchableBenchmarks.decodeLongList
             ]
