@@ -101,7 +101,14 @@ run parser input =
             parser { input = input, offset = 0 }
     in
     Decode.decode decoder input
-        |> Maybe.map Tuple.second
+        |> Maybe.map
+            (\( finalState, finalValue ) ->
+                -- let
+                --     _ =
+                --         Debug.log "final state" finalState
+                -- in
+                finalValue
+            )
 
 
 map : (a -> b) -> Parser a -> Parser b
@@ -170,30 +177,22 @@ map2 f parserX parserY =
 loop : state -> (state -> Parser (Step state a)) -> Parser a
 loop initialState callback initialParserState =
     let
-        parsifiedCallback : State -> state -> Decoder (Step state ( State, a ))
-        parsifiedCallback parserState state =
-            let
-                stepDecoder : Decoder ( State, Step state a )
-                stepDecoder =
-                    callback state parserState
+        makeParserStep : State -> Step state a -> Step ( state, State ) ( State, a )
+        makeParserStep parserState step =
+            case step of
+                Decode.Loop state ->
+                    Decode.Loop ( state, parserState )
 
-                moveParserStateIntoStep : ( State, Step state a ) -> Step state ( State, a )
-                moveParserStateIntoStep ( ps, step ) =
-                    stepMap (\a -> ( ps, a )) step
-            in
-            Decode.map moveParserStateIntoStep stepDecoder
+                Decode.Done a ->
+                    Decode.Done ( parserState, a )
+
+        loopStep : ( state, State ) -> Decoder (Step ( state, State ) ( State, a ))
+        loopStep ( state, parserState ) =
+            callback state parserState
+                -- Decoder (State, Step state a)
+                |> Decode.map (\( newParserState, step ) -> makeParserStep newParserState step)
     in
-    Decode.loop initialState (parsifiedCallback initialParserState)
-
-
-stepMap : (a -> b) -> Step state a -> Step state b
-stepMap f step =
-    case step of
-        Decode.Loop state ->
-            Decode.Loop state
-
-        Decode.Done a ->
-            Decode.Done (f a)
+    Decode.loop ( initialState, initialParserState ) loopStep
 
 
 repeat : Parser value -> Int -> Parser (List value)

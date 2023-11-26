@@ -69,6 +69,7 @@ loop =
                     , E.string "baz"
                     ]
                     |> P.run parser
+                    -- |> Expect.equal Nothing
                     |> Expect.equal (Just [ "foo", "bar", "baz" ])
         , test "failure propagates" <|
             \_ ->
