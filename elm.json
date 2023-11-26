@@ -1,12 +1,11 @@
 {
     "type": "package",
-    "name": "zwilias/elm-bytes-parser",
-    "summary": "Parse elm/bytes using composable parsers with errors and context tracking.",
+    "name": "mpizenberg/elm-bytes-decoder",
+    "summary": "Enable branching (oneOf) for elm/bytes decoders.",
     "license": "BSD-3-Clause",
     "version": "1.0.0",
     "exposed-modules": [
-        "Bytes.Parser",
-        "Bytes.FastParser"
+        "Bytes.Decode.Branchable"
     ],
     "elm-version": "0.19.1 <= v < 0.20.0",
     "dependencies": {
