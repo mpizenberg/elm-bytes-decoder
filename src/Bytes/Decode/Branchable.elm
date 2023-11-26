@@ -1,4 +1,14 @@
-module Bytes.Decode.Branchable exposing (..)
+module Bytes.Decode.Branchable exposing
+    ( Decoder, run
+    , succeed, fail
+    , unsignedInt8, unsignedInt16, unsignedInt32, signedInt8, signedInt16, signedInt32
+    , float32, float64
+    , string
+    , bytes
+    , map, map2, map3, map4, map5
+    , keep, ignore, skip
+    , andThen, oneOf, repeat, loop
+    )
 
 {-| Parse `Bytes` with custom error reporting and context tracking.
 
@@ -31,7 +41,7 @@ module Bytes.Decode.Branchable exposing (..)
 @docs string
 
 
-## Bytes
+## Decoding Bytes
 
 @docs bytes
 
@@ -94,6 +104,7 @@ run decoder input =
 runKeepState : Decoder value -> Bytes -> Maybe ( State, value )
 runKeepState (Decoder decoder) input =
     let
+        dec : D.Decoder ( State, value )
         dec =
             decoder { input = input, offset = 0 }
     in
@@ -377,6 +388,7 @@ oneOfHelper offsetInput options state =
 dropBytes : Int -> Bytes -> Bytes
 dropBytes offset bs =
     let
+        width : Int
         width =
             Bytes.width bs
     in

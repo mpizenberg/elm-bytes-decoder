@@ -38,15 +38,21 @@ import Simplify
 
 config : List Rule
 config =
-    [ Docs.UpToDateReadmeLinks.rule
+    [ Docs.NoMissing.rule
+        { document = onlyExposed
+        , from = exposedModules
+        }
+    , Docs.ReviewLinksAndSections.rule
+    , Docs.ReviewAtDocs.rule
+    , Docs.UpToDateReadmeLinks.rule
     , NoConfusingPrefixOperator.rule
     , NoDebug.Log.rule
     , NoDebug.TodoOrToString.rule
         |> Rule.ignoreErrorsForDirectories [ "tests/" ]
     , NoExposingEverything.rule
-    -- , NoImportingEverything.rule []
+    , NoImportingEverything.rule []
     , NoMissingTypeAnnotation.rule
-    -- , NoMissingTypeAnnotationInLetIn.rule
+    , NoMissingTypeAnnotationInLetIn.rule
     , NoMissingTypeExpose.rule
     , NoSimpleLetBody.rule
     , NoPrematureLetComputation.rule

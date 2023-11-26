@@ -1,11 +1,11 @@
 module Main exposing (basic, loop, oneOf, repeat)
 
 import Bytes as B
-import Bytes.Decode as D
-import Bytes.Decode.Branchable as P
+import Bytes.Decode
+import Bytes.Decode.Branchable as D
 import Bytes.Encode as E
 import Expect
-import Test exposing (..)
+import Test exposing (Test, describe, test)
 
 
 basic : Test
@@ -15,19 +15,19 @@ basic =
             \_ ->
                 E.unsignedInt8 8
                     |> E.encode
-                    |> P.run P.unsignedInt8
+                    |> D.run D.unsignedInt8
                     |> Expect.equal (Just 8)
         , test "no reading past end of input" <|
             \_ ->
-                P.run P.unsignedInt8 emptyBytes
+                D.run D.unsignedInt8 emptyBytes
                     |> Expect.equal Nothing
         , test "succeed succeeds" <|
             \_ ->
-                P.run (P.succeed "sure") emptyBytes
+                D.run (D.succeed "sure") emptyBytes
                     |> Expect.equal (Just "sure")
         , test "fail fails" <|
             \_ ->
-                P.run P.fail emptyBytes
+                D.run D.fail emptyBytes
                     |> Expect.equal Nothing
         , test "can read multiple things" <|
             \_ ->
@@ -35,7 +35,7 @@ basic =
                     [ E.unsignedInt8 1
                     , E.unsignedInt8 2
                     ]
-                    |> P.run (P.map2 Tuple.pair P.unsignedInt8 P.unsignedInt8)
+                    |> D.run (D.map2 Tuple.pair D.unsignedInt8 D.unsignedInt8)
                     |> Expect.equal (Just ( 1, 2 ))
         ]
 
@@ -43,21 +43,21 @@ basic =
 loop : Test
 loop =
     let
-        parser : P.Decoder (List String)
+        parser : D.Decoder (List String)
         parser =
-            P.unsignedInt8
-                |> P.andThen (\cnt -> P.loop ( cnt, [] ) loopHelper)
+            D.unsignedInt8
+                |> D.andThen (\cnt -> D.loop ( cnt, [] ) loopHelper)
 
         loopHelper :
             ( Int, List String )
-            -> P.Decoder (D.Step ( Int, List String ) (List String))
+            -> D.Decoder (Bytes.Decode.Step ( Int, List String ) (List String))
         loopHelper ( cnt, acc ) =
             if cnt <= 0 then
-                P.succeed (D.Done (List.reverse acc))
+                D.succeed (Bytes.Decode.Done (List.reverse acc))
 
             else
-                P.string 3
-                    |> P.map (\s -> D.Loop ( cnt - 1, s :: acc ))
+                D.string 3
+                    |> D.map (\s -> Bytes.Decode.Loop ( cnt - 1, s :: acc ))
     in
     describe "loops"
         [ test "When everything goes well" <|
@@ -68,7 +68,7 @@ loop =
                     , E.string "bar"
                     , E.string "baz"
                     ]
-                    |> P.run parser
+                    |> D.run parser
                     -- |> Expect.equal Nothing
                     |> Expect.equal (Just [ "foo", "bar", "baz" ])
         , test "failure propagates" <|
@@ -78,7 +78,7 @@ loop =
                     , E.string "foo"
                     , E.string "bar"
                     ]
-                    |> P.run parser
+                    |> D.run parser
                     |> Expect.equal Nothing
         ]
 
@@ -88,10 +88,10 @@ repeat =
     test "repeat repeats" <|
         \_ ->
             let
-                parser : P.Decoder (List String)
+                parser : D.Decoder (List String)
                 parser =
-                    P.unsignedInt8
-                        |> P.andThen (P.repeat (P.string 3))
+                    D.unsignedInt8
+                        |> D.andThen (D.repeat (D.string 3))
             in
             encodeSequence
                 [ E.unsignedInt8 3
@@ -99,27 +99,28 @@ repeat =
                 , E.string "bar"
                 , E.string "baz"
                 ]
-                |> P.run parser
+                |> D.run parser
                 |> Expect.equal (Just [ "foo", "bar", "baz" ])
 
 
 oneOf : Test
 oneOf =
     let
-        parseExactString : String -> P.Decoder String
+        parseExactString : String -> D.Decoder String
         parseExactString str =
-            P.string (String.length str)
-                |> P.andThen
+            D.string (String.length str)
+                |> D.andThen
                     (\s ->
                         if s == str then
-                            P.succeed str
+                            D.succeed str
 
                         else
-                            P.fail
+                            D.fail
                     )
 
+        oneOfFooBarBaz : D.Decoder String
         oneOfFooBarBaz =
-            P.oneOf
+            D.oneOf
                 [ parseExactString "foo"
                 , parseExactString "bar"
                 , parseExactString "baz"
@@ -128,19 +129,19 @@ oneOf =
     describe "oneOf"
         [ test "none" <|
             \_ ->
-                P.run oneOfFooBarBaz emptyBytes
+                D.run oneOfFooBarBaz emptyBytes
                     |> Expect.equal Nothing
         , test "foo" <|
             \_ ->
-                P.run oneOfFooBarBaz (E.encode <| E.string "foo...")
+                D.run oneOfFooBarBaz (E.encode <| E.string "foo...")
                     |> Expect.equal (Just "foo")
         , test "bar" <|
             \_ ->
-                P.run oneOfFooBarBaz (E.encode <| E.string "bar...")
+                D.run oneOfFooBarBaz (E.encode <| E.string "bar...")
                     |> Expect.equal (Just "bar")
         , test "foobarbaz" <|
             \_ ->
-                P.run (P.repeat oneOfFooBarBaz 3) (E.encode <| E.string "foobarbaz...")
+                D.run (D.repeat oneOfFooBarBaz 3) (E.encode <| E.string "foobarbaz...")
                     |> Expect.equal (Just [ "foo", "bar", "baz" ])
         ]
 
