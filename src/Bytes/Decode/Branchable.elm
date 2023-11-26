@@ -244,7 +244,7 @@ pretty flexible decoders in a straightforward manner: the order in which things
 are parsed is apparent.
 
     import Bytes.Encode as E
-    import Bytes.Decoder.Branchable as D exposing (Decoder)
+    import Bytes.Decode.Branchable as D exposing (Decoder)
 
     decoder : Decoder (Int, Int)
     decoder =
@@ -278,8 +278,8 @@ you can use this for checking the value of something, without using the value.
 
     match : Int -> Decoder Int
     match expected =
-        P.unsignedInt8
-            |> P.andThen
+        D.unsignedInt8
+            |> D.andThen
                 (\actual ->
                     if expected == actual then
                         D.succeed actual
