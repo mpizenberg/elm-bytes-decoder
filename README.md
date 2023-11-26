@@ -1,41 +1,62 @@
-# elm-bytes-parser [![Build Status](https://travis-ci.com/zwilias/elm-bytes-parser.svg?branch=master)](https://travis-ci.com/zwilias/elm-bytes-parser)
-> Parse elm/bytes using composable parsers with errors and context tracking.
+# elm-bytes-decoder 
 
-`zwilias/elm-bytes-parser` builds on top of `elm/bytes#Bytes.Decode` and adds
-functionality I've found useful when dealing with (byte-aligned) binary formats.
-Note that most of these features are relevant to creating parsers, and less
-relevant to end-users of your decoder/parser.
+> Enable branching (`oneOf`) for elm/bytes decoders.
 
-## Informative errors
+This package builds on top of `elm/bytes#Bytes.Decode` and adds
+functionality to branch decoders with `oneOf`.
 
-When debugging parsers, I've found it very useful to know what went wrong. Where
-`Bytes.Decode.decode` returns a `Maybe a`, this package returns a `Result (Error
-context error) a`, where the `error` type is parametrized so one can use simple
-strings, or a custom type, or whatever you fancy, where the `error` type is
-parametrized so one can use simple strings, or a custom type, or whatever you
-fancy.
+It is heavily inspired by `zwilias/elm-bytes-parser` and even starts as a fork of it.
+The key changes are two-fold.
 
-Errors include the offset at which they occurred. When reading goes out of
-bounds, the error includes how many bytes you tried to read and the offset at
-which you tried to do so. When `fail` is used, it can tell you where exactly
-that happened.
+First, on the visible side, this package has removed all context and error handling
+in order to stay as close as possible to `elm/bytes` decoders.
 
-## Context for errors
+And second, the decoding is handled slightly differently.
+In `zwilias/elm-bytes-parser`, for every decoder,
+the code does a double decoding consisting in an bytes offset followed by the actual decoder:
 
-Parsers can run in a given context. When errors occur, they
-are (recursively) tagged with the context in which they occured, which means you
-get to know both the label of the context, as well as the offset wwhere the
-context started.
+```elm
+-- extract from zwilias/elm-bytes-parser
+fromDecoder : Decoder v -> Int -> Parser context error v
+fromDecoder dec byteLength =
+    Parser <|
+        \state ->
+            let
+                combined =
+                    Decode.map2 (always identity) (Decode.bytes state.offset) dec
+            in
+            case Decode.decode combined state.input of
+                Just res ->
+                    Good res { state | offset = state.offset + byteLength }
 
-## Random reads
+                Nothing ->
+                    Bad (OutOfBounds { at = state.offset, bytes = byteLength })
+```
 
-Quite a few binary formats include fixed-width "information" sections, with
-offset to data sections. To make such formats easier to parse, this package
-makes it fairly trivial to run a piece of a parser as a "random access" parser,
-meaning it runs at specified offset, relative to a fixed position. This fixed
-position could be the start of the stream (~> absolute offset) or relative to
-some previously parsed marker. See the `randomAccess` docs for more on how to
-use this!
+In contrast, in this `elm-bytes-decoder` package, decoders are left unchanged.
 
-Feedback is very welcome. I'd be especially interested in how people end up
-using this!
+```elm
+-- extract from mpizenberg/elm-bytes-decoder
+fromDecoder : D.Decoder v -> Int -> Decoder v
+fromDecoder decoder byteLength =
+    Decoder <|
+        \state ->
+            D.map
+                (\v -> ( { input = state.input, offset = state.offset + byteLength }, v ))
+                decoder
+```
+
+This is enabled by the state storing a decoder instead of a fully resolved decoding result.
+
+```elm
+type Decoder value
+    = Decoder (State -> D.Decoder ( State, value ))
+
+type alias State =
+    { input : Bytes, offset : Int }
+```
+
+Thanks to this change, we can compose decoders as usual, and only when calling `oneOf`,
+backtracking is taken care of, instead of for each decoder.
+In theory, this should result in more performant decoding.
+In practice, I didn't notice any significant change.
