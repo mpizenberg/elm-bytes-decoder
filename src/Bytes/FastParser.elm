@@ -208,8 +208,8 @@ loop initialState callback initialParserState =
     Decode.loop ( initialState, initialParserState ) loopStep
 
 
-repeat : Parser value -> Int -> Parser (List value)
-repeat p nTimes =
+repeat : Int -> Parser value -> Parser (List value)
+repeat nTimes p =
     loop ( nTimes, [] ) (repeatHelp p)
 
 
