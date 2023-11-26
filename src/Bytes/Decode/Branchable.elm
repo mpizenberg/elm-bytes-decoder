@@ -1,5 +1,5 @@
 module Bytes.Decode.Branchable exposing
-    ( Decoder, run
+    ( Decoder
     , succeed, fail
     , unsignedInt8, unsignedInt16, unsignedInt32, signedInt8, signedInt16, signedInt32
     , float32, float64
@@ -8,6 +8,7 @@ module Bytes.Decode.Branchable exposing
     , map, map2, map3, map4, map5
     , keep, ignore, skip
     , andThen, oneOf, repeat, loop
+    , decode
     )
 
 {-| Parse `Bytes` with custom error reporting and context tracking.
@@ -85,17 +86,17 @@ type alias State =
 
     E.string "hello"
         |> E.encode
-        |> D.run (D.string 5)
+        |> D.decode (D.string 5)
     --> Just "hello"
 
     E.string "hello"
         |> E.encode
-        |> D.run (D.string 6)
+        |> D.decode (D.string 6)
     --> Nothing
 
 -}
-run : Decoder value -> Bytes -> Maybe value
-run decoder input =
+decode : Decoder value -> Bytes -> Maybe value
+decode decoder input =
     runKeepState decoder input
         -- |> Debug.log "(state, value)"
         |> Maybe.map (\( _, value ) -> value)
@@ -117,7 +118,7 @@ runKeepState (Decoder decoder) input =
     import Bytes.Decode.Branchable as D
 
     E.encode (E.sequence [])
-        |> D.run (D.succeed "hi there")
+        |> D.decode (D.succeed "hi there")
     --> Just "hi there"
 
 -}
@@ -133,7 +134,7 @@ succeed val =
 
     E.sequence []
         |> E.encode
-        |> D.run D.fail
+        |> D.decode D.fail
     --> Nothing
 
 -}
@@ -149,7 +150,7 @@ fail =
 
     E.string "hello"
         |> E.encode
-        |> D.run (D.map String.length (D.string 5))
+        |> D.decode (D.map String.length (D.string 5))
     --> Just 5
 
 -}
@@ -179,7 +180,7 @@ map f (Decoder decoder) =
     map2Example =
         D.map2 String.repeat D.unsignedInt8 (D.string 3)
 
-    D.run map2Example input
+    D.decode map2Example input
     --> Just "watwat"
 
 Note that the effect of `map2` (and, in fact, every `map` variation) can also be
@@ -191,7 +192,7 @@ achieved using a combination of [`succeed`](#succeed) and [`keep`](#keep).
             |> D.keep D.unsignedInt8
             |> D.keep (D.string 3)
 
-    D.run equivalent input
+    D.decode equivalent input
     --> Just "watwat"
 
 -}
@@ -259,7 +260,7 @@ are parsed is apparent.
     ]
         |> E.sequence
         |> E.encode
-        |> D.run decoder
+        |> D.decode decoder
     --> Just ( 12, 45 )
 
 -}
@@ -294,12 +295,12 @@ you can use this for checking the value of something, without using the value.
 
     E.unsignedInt8 66
         |> E.encode
-        |> D.run decoder
+        |> D.decode decoder
     --> Just ()
 
     E.unsignedInt8 44
         |> E.encode
-        |> D.run decoder
+        |> D.decode decoder
     --> Nothing
 
 -}
@@ -338,7 +339,7 @@ actual data:
     ]
         |> E.sequence
         |> E.encode
-        |> D.run string
+        |> D.decode string
     --> Just "hello"
 
 -}
@@ -414,7 +415,7 @@ times to repeat something through a decoder.
         |> List.map E.unsignedInt8
         |> E.sequence
         |> E.encode
-        |> D.run intList
+        |> D.decode intList
     --> Just [ 0, 1, 2, 3, 4 ]
 
 -}
@@ -554,7 +555,7 @@ always agree with the number of bytes that went into it!
         |> List.map E.unsignedInt8
         |> E.sequence
         |> E.encode
-        |> D.run (D.string 4)
+        |> D.decode (D.string 4)
     --> Just "👍"
 
 -}

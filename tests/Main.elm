@@ -15,19 +15,19 @@ basic =
             \_ ->
                 E.unsignedInt8 8
                     |> E.encode
-                    |> D.run D.unsignedInt8
+                    |> D.decode D.unsignedInt8
                     |> Expect.equal (Just 8)
         , test "no reading past end of input" <|
             \_ ->
-                D.run D.unsignedInt8 emptyBytes
+                D.decode D.unsignedInt8 emptyBytes
                     |> Expect.equal Nothing
         , test "succeed succeeds" <|
             \_ ->
-                D.run (D.succeed "sure") emptyBytes
+                D.decode (D.succeed "sure") emptyBytes
                     |> Expect.equal (Just "sure")
         , test "fail fails" <|
             \_ ->
-                D.run D.fail emptyBytes
+                D.decode D.fail emptyBytes
                     |> Expect.equal Nothing
         , test "can read multiple things" <|
             \_ ->
@@ -35,7 +35,7 @@ basic =
                     [ E.unsignedInt8 1
                     , E.unsignedInt8 2
                     ]
-                    |> D.run (D.map2 Tuple.pair D.unsignedInt8 D.unsignedInt8)
+                    |> D.decode (D.map2 Tuple.pair D.unsignedInt8 D.unsignedInt8)
                     |> Expect.equal (Just ( 1, 2 ))
         ]
 
@@ -68,7 +68,7 @@ loop =
                     , E.string "bar"
                     , E.string "baz"
                     ]
-                    |> D.run parser
+                    |> D.decode parser
                     -- |> Expect.equal Nothing
                     |> Expect.equal (Just [ "foo", "bar", "baz" ])
         , test "failure propagates" <|
@@ -78,7 +78,7 @@ loop =
                     , E.string "foo"
                     , E.string "bar"
                     ]
-                    |> D.run parser
+                    |> D.decode parser
                     |> Expect.equal Nothing
         ]
 
@@ -99,7 +99,7 @@ repeat =
                 , E.string "bar"
                 , E.string "baz"
                 ]
-                |> D.run parser
+                |> D.decode parser
                 |> Expect.equal (Just [ "foo", "bar", "baz" ])
 
 
@@ -129,19 +129,19 @@ oneOf =
     describe "oneOf"
         [ test "none" <|
             \_ ->
-                D.run oneOfFooBarBaz emptyBytes
+                D.decode oneOfFooBarBaz emptyBytes
                     |> Expect.equal Nothing
         , test "foo" <|
             \_ ->
-                D.run oneOfFooBarBaz (E.encode <| E.string "foo...")
+                D.decode oneOfFooBarBaz (E.encode <| E.string "foo...")
                     |> Expect.equal (Just "foo")
         , test "bar" <|
             \_ ->
-                D.run oneOfFooBarBaz (E.encode <| E.string "bar...")
+                D.decode oneOfFooBarBaz (E.encode <| E.string "bar...")
                     |> Expect.equal (Just "bar")
         , test "foobarbaz" <|
             \_ ->
-                D.run (D.repeat oneOfFooBarBaz 3) (E.encode <| E.string "foobarbaz...")
+                D.decode (D.repeat oneOfFooBarBaz 3) (E.encode <| E.string "foobarbaz...")
                     |> Expect.equal (Just [ "foo", "bar", "baz" ])
         ]
 

@@ -7,12 +7,12 @@ import Data
 
 decodeList : () -> Maybe (List Float)
 decodeList =
-    \_ -> D.run parseFloatList Data.bytesFloatList
+    \_ -> D.decode parseFloatList Data.bytesFloatList
 
 
 decodeLongList : () -> Maybe (List Float)
 decodeLongList =
-    \_ -> D.run parseFloatList Data.longBytesFloatList
+    \_ -> D.decode parseFloatList Data.longBytesFloatList
 
 
 parseFloatList : Decoder (List Float)
