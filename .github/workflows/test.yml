@@ -54,7 +54,7 @@ jobs:
         with:
           cache-key: elm-home-review${{ hashFiles('elm-tooling.json', 'elm.json', 'review/elm.json') }}
           cache-restore-key: elm-home-review
-      - run: npm exec --no elm-review --ignore-dirs tests/VerifyExamples
+      - run: npm exec --no elm-review
 
   verify-examples:
     runs-on: ubuntu-latest
