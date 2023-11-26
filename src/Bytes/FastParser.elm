@@ -96,19 +96,18 @@ forEverDecoder =
 
 run : Parser value -> Bytes -> Maybe value
 run parser input =
+    runKeepState parser input
+        -- |> Debug.log "(state, value)"
+        |> Maybe.map (\( _, value ) -> value)
+
+
+runKeepState : Parser value -> Bytes -> Maybe ( State, value )
+runKeepState parser input =
     let
         decoder =
             parser { input = input, offset = 0 }
     in
     Decode.decode decoder input
-        |> Maybe.map
-            (\( finalState, finalValue ) ->
-                -- let
-                --     _ =
-                --         Debug.log "final state" finalState
-                -- in
-                finalValue
-            )
 
 
 map : (a -> b) -> Parser a -> Parser b
@@ -154,24 +153,38 @@ map2 f parserX parserY =
 -- skip : Int -> Parser error value -> Parser error value
 -- skip nBytes =
 --     ignore (bytes nBytes)
--- oneOf : List (Parser error value) -> Parser error value
--- oneOf options =
---     Parser (oneOfHelp options [])
--- oneOfHelp :
---     List (Parser error value)
---     -> List (Error error)
---     -> State
---     -> ParseResult error value
--- oneOfHelp options errors state =
---     case options of
---         [] ->
---             Bad (BadOneOf { at = state.offset } (List.reverse errors))
---         (Parser f) :: xs ->
---             case f state of
---                 Good v s ->
---                     Good v s
---                 Bad e ->
---                     oneOfHelp xs (e :: errors) state
+
+
+oneOf : List (Parser value) -> Parser value
+oneOf options ({ input, offset } as state) =
+    oneOfHelper (dropBytes offset input) options state
+
+
+oneOfHelper : Bytes -> List (Parser value) -> Parser value
+oneOfHelper offsetInput options ({ input, offset } as state) =
+    case options of
+        [] ->
+            Decode.fail
+
+        parser :: otherParsers ->
+            case runKeepState parser offsetInput of
+                Just ( newState, value ) ->
+                    Decode.bytes newState.offset
+                        |> Decode.map (\_ -> ( { input = input, offset = offset + newState.offset }, value ))
+
+                Nothing ->
+                    oneOfHelper offsetInput otherParsers state
+
+
+dropBytes : Int -> Bytes -> Bytes
+dropBytes offset bs =
+    let
+        width =
+            Bytes.width bs
+    in
+    Decode.map2 (\_ x -> x) (Decode.bytes offset) (Decode.bytes <| width - offset)
+        |> (\d -> Decode.decode d bs)
+        |> Maybe.withDefault bs
 
 
 loop : state -> (state -> Parser (Step state a)) -> Parser a

@@ -1,4 +1,4 @@
-module Main exposing (basic, loop, repeat)
+module Main exposing (basic, loop, oneOf, repeat)
 
 import Bytes as B
 import Bytes.Decode as D
@@ -100,6 +100,48 @@ repeat =
                 ]
                 |> P.run parser
                 |> Expect.equal (Just [ "foo", "bar", "baz" ])
+
+
+oneOf : Test
+oneOf =
+    let
+        parseExactString : String -> P.Parser String
+        parseExactString str =
+            P.string (String.length str)
+                |> P.andThen
+                    (\s ->
+                        if s == str then
+                            P.succeed str
+
+                        else
+                            P.fail
+                    )
+
+        oneOfFooBarBaz =
+            P.oneOf
+                [ parseExactString "foo"
+                , parseExactString "bar"
+                , parseExactString "baz"
+                ]
+    in
+    describe "oneOf"
+        [ test "none" <|
+            \_ ->
+                P.run oneOfFooBarBaz emptyBytes
+                    |> Expect.equal Nothing
+        , test "foo" <|
+            \_ ->
+                P.run oneOfFooBarBaz (E.encode <| E.string "foo...")
+                    |> Expect.equal (Just "foo")
+        , test "bar" <|
+            \_ ->
+                P.run oneOfFooBarBaz (E.encode <| E.string "bar...")
+                    |> Expect.equal (Just "bar")
+        , test "foobarbaz" <|
+            \_ ->
+                P.run (P.repeat oneOfFooBarBaz 3) (E.encode <| E.string "foobarbaz...")
+                    |> Expect.equal (Just [ "foo", "bar", "baz" ])
+        ]
 
 
 encodeSequence : List E.Encoder -> B.Bytes
