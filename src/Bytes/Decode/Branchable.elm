@@ -1,4 +1,4 @@
-module Bytes.FastParser exposing (..)
+module Bytes.Decode.Branchable exposing (..)
 
 {-| Parse `Bytes` with custom error reporting and context tracking.
 
@@ -58,14 +58,14 @@ module Bytes.FastParser exposing (..)
 -}
 
 import Bytes exposing (Bytes)
-import Bytes.Decode as Decode exposing (Decoder, Step)
+import Bytes.Decode as D exposing (Step)
 
 
 {-| A parser which tracks a certain type of context, a certain type of error and
 produces a certain type of value.
 -}
-type Parser value
-    = Parser (State -> Decoder ( State, value ))
+type Decoder value
+    = Decoder (State -> D.Decoder ( State, value ))
 
 
 type alias State =
@@ -74,75 +74,65 @@ type alias State =
     }
 
 
-succeed : value -> Parser value
+succeed : value -> Decoder value
 succeed val =
-    fromDecoder (Decode.succeed val) 0
+    fromDecoder (D.succeed val) 0
 
 
-fail : Parser value
+fail : Decoder value
 fail =
-    fromDecoder Decode.fail 0
+    fromDecoder D.fail 0
 
 
-forEver : a -> b
-forEver a =
-    forEver a
-
-
-forEverDecoder : Decoder a
-forEverDecoder =
-    Decode.map forEver (Decode.succeed ())
-
-
-run : Parser value -> Bytes -> Maybe value
+run : Decoder value -> Bytes -> Maybe value
 run parser input =
     runKeepState parser input
         -- |> Debug.log "(state, value)"
         |> Maybe.map (\( _, value ) -> value)
 
 
-runKeepState : Parser value -> Bytes -> Maybe ( State, value )
-runKeepState (Parser parser) input =
+runKeepState : Decoder value -> Bytes -> Maybe ( State, value )
+runKeepState (Decoder parser) input =
     let
         decoder =
             parser { input = input, offset = 0 }
     in
-    Decode.decode decoder input
+    D.decode decoder input
 
 
-map : (a -> b) -> Parser a -> Parser b
-map f (Parser parser) =
-    Parser <|
+map : (a -> b) -> Decoder a -> Decoder b
+map f (Decoder parser) =
+    Decoder <|
         \state ->
             parser state
-                |> Decode.map (Tuple.mapSecond f)
+                |> D.map (Tuple.mapSecond f)
 
 
-fromDecoder : Decoder v -> Int -> Parser v
+fromDecoder : D.Decoder v -> Int -> Decoder v
 fromDecoder decoder byteLength =
-    Parser <|
+    Decoder <|
         \state ->
-            Decode.map
+            D.map
                 (\v -> ( { input = state.input, offset = state.offset + byteLength }, v ))
                 decoder
 
 
-andThen : (a -> Parser b) -> Parser a -> Parser b
-andThen thenB (Parser parserA) =
-    Parser <|
+andThen : (a -> Decoder b) -> Decoder a -> Decoder b
+andThen thenB (Decoder parserA) =
+    Decoder <|
         \state ->
             parserA state
-                |> Decode.andThen
+                |> D.andThen
                     (\( newState, a ) ->
                         let
-                            (Parser parserB) =
+                            (Decoder parserB) =
                                 thenB a
                         in
                         parserB newState
                     )
 
 
-map2 : (x -> y -> z) -> Parser x -> Parser y -> Parser z
+map2 : (x -> y -> z) -> Decoder x -> Decoder y -> Decoder z
 map2 f parserX parserY =
     parserX |> andThen (\x -> map (\y -> f x y) parserY)
 
@@ -165,24 +155,24 @@ map2 f parserX parserY =
 --     ignore (bytes nBytes)
 
 
-oneOf : List (Parser value) -> Parser value
+oneOf : List (Decoder value) -> Decoder value
 oneOf options =
-    Parser <|
+    Decoder <|
         \state ->
             oneOfHelper (dropBytes state.offset state.input) options state
 
 
-oneOfHelper : Bytes -> List (Parser value) -> State -> Decoder ( State, value )
+oneOfHelper : Bytes -> List (Decoder value) -> State -> D.Decoder ( State, value )
 oneOfHelper offsetInput options state =
     case options of
         [] ->
-            Decode.fail
+            D.fail
 
         parser :: otherParsers ->
             case runKeepState parser offsetInput of
                 Just ( newState, value ) ->
-                    Decode.bytes newState.offset
-                        |> Decode.map (\_ -> ( { input = state.input, offset = state.offset + newState.offset }, value ))
+                    D.bytes newState.offset
+                        |> D.map (\_ -> ( { input = state.input, offset = state.offset + newState.offset }, value ))
 
                 Nothing ->
                     oneOfHelper offsetInput otherParsers state
@@ -194,53 +184,53 @@ dropBytes offset bs =
         width =
             Bytes.width bs
     in
-    Decode.map2 (\_ x -> x) (Decode.bytes offset) (Decode.bytes <| width - offset)
-        |> (\d -> Decode.decode d bs)
+    D.map2 (\_ x -> x) (D.bytes offset) (D.bytes <| width - offset)
+        |> (\d -> D.decode d bs)
         |> Maybe.withDefault bs
 
 
-loop : state -> (state -> Parser (Step state a)) -> Parser a
+loop : state -> (state -> Decoder (Step state a)) -> Decoder a
 loop initialState callback =
-    Parser <|
+    Decoder <|
         \initialParserState ->
             let
                 makeParserStep : State -> Step state a -> Step ( state, State ) ( State, a )
                 makeParserStep parserState step =
                     case step of
-                        Decode.Loop state ->
-                            Decode.Loop ( state, parserState )
+                        D.Loop state ->
+                            D.Loop ( state, parserState )
 
-                        Decode.Done a ->
-                            Decode.Done ( parserState, a )
+                        D.Done a ->
+                            D.Done ( parserState, a )
 
-                loopStep : ( state, State ) -> Decoder (Step ( state, State ) ( State, a ))
+                loopStep : ( state, State ) -> D.Decoder (Step ( state, State ) ( State, a ))
                 loopStep ( state, parserState ) =
                     let
-                        (Parser parser) =
+                        (Decoder parser) =
                             callback state
                     in
                     parser parserState
                         -- Decoder (State, Step state a)
-                        |> Decode.map (\( newParserState, step ) -> makeParserStep newParserState step)
+                        |> D.map (\( newParserState, step ) -> makeParserStep newParserState step)
             in
-            Decode.loop ( initialState, initialParserState ) loopStep
+            D.loop ( initialState, initialParserState ) loopStep
 
 
-repeat : Int -> Parser value -> Parser (List value)
+repeat : Int -> Decoder value -> Decoder (List value)
 repeat nTimes p =
     loop ( nTimes, [] ) (repeatHelp p)
 
 
 repeatHelp :
-    Parser value
+    Decoder value
     -> ( Int, List value )
-    -> Parser (Step ( Int, List value ) (List value))
+    -> Decoder (Step ( Int, List value ) (List value))
 repeatHelp p ( cnt, acc ) =
     if cnt <= 0 then
-        succeed (Decode.Done (List.reverse acc))
+        succeed (D.Done (List.reverse acc))
 
     else
-        map (\v -> Decode.Loop ( cnt - 1, v :: acc )) p
+        map (\v -> D.Loop ( cnt - 1, v :: acc )) p
 
 
 
@@ -249,42 +239,42 @@ repeatHelp p ( cnt, acc ) =
 
 {-| Parse one byte into an integer from 0 to 255.
 -}
-unsignedInt8 : Parser Int
+unsignedInt8 : Decoder Int
 unsignedInt8 =
-    fromDecoder Decode.unsignedInt8 1
+    fromDecoder D.unsignedInt8 1
 
 
 {-| Parse two bytes into an integer from 0 to 65535.
 -}
-unsignedInt16 : Bytes.Endianness -> Parser Int
+unsignedInt16 : Bytes.Endianness -> Decoder Int
 unsignedInt16 bo =
-    fromDecoder (Decode.unsignedInt16 bo) 2
+    fromDecoder (D.unsignedInt16 bo) 2
 
 
-unsignedInt32 : Bytes.Endianness -> Parser Int
+unsignedInt32 : Bytes.Endianness -> Decoder Int
 unsignedInt32 bo =
-    fromDecoder (Decode.unsignedInt32 bo) 4
+    fromDecoder (D.unsignedInt32 bo) 4
 
 
 {-| Parse 4 bytes into a Float.
 -}
-float32 : Bytes.Endianness -> Parser Float
+float32 : Bytes.Endianness -> Decoder Float
 float32 bo =
-    fromDecoder (Decode.float32 bo) 4
+    fromDecoder (D.float32 bo) 4
 
 
-float64 : Bytes.Endianness -> Parser Float
+float64 : Bytes.Endianness -> Decoder Float
 float64 bo =
-    fromDecoder (Decode.float64 bo) 8
+    fromDecoder (D.float64 bo) 8
 
 
 {-| Parse `count` bytes as `Bytes`.
 -}
-bytes : Int -> Parser Bytes
+bytes : Int -> Decoder Bytes
 bytes count =
-    fromDecoder (Decode.bytes count) count
+    fromDecoder (D.bytes count) count
 
 
-string : Int -> Parser String
+string : Int -> Decoder String
 string byteCount =
-    fromDecoder (Decode.string byteCount) byteCount
+    fromDecoder (D.string byteCount) byteCount

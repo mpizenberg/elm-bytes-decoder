@@ -2,8 +2,8 @@ module Main exposing (basic, loop, oneOf, repeat)
 
 import Bytes as B
 import Bytes.Decode as D
+import Bytes.Decode.Branchable as P
 import Bytes.Encode as E
-import Bytes.FastParser as P
 import Expect
 import Test exposing (..)
 
@@ -43,14 +43,14 @@ basic =
 loop : Test
 loop =
     let
-        parser : P.Parser (List String)
+        parser : P.Decoder (List String)
         parser =
             P.unsignedInt8
                 |> P.andThen (\cnt -> P.loop ( cnt, [] ) loopHelper)
 
         loopHelper :
             ( Int, List String )
-            -> P.Parser (D.Step ( Int, List String ) (List String))
+            -> P.Decoder (D.Step ( Int, List String ) (List String))
         loopHelper ( cnt, acc ) =
             if cnt <= 0 then
                 P.succeed (D.Done (List.reverse acc))
@@ -88,7 +88,7 @@ repeat =
     test "repeat repeats" <|
         \_ ->
             let
-                parser : P.Parser (List String)
+                parser : P.Decoder (List String)
                 parser =
                     P.andThen (\count -> P.repeat count (P.string 3)) P.unsignedInt8
             in
@@ -105,7 +105,7 @@ repeat =
 oneOf : Test
 oneOf =
     let
-        parseExactString : String -> P.Parser String
+        parseExactString : String -> P.Decoder String
         parseExactString str =
             P.string (String.length str)
                 |> P.andThen
