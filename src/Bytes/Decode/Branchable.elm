@@ -1,5 +1,5 @@
 module Bytes.Decode.Branchable exposing
-    ( Decoder
+    ( Decoder, decode
     , succeed, fail
     , unsignedInt8, unsignedInt16, unsignedInt32, signedInt8, signedInt16, signedInt32
     , float32, float64
@@ -8,7 +8,6 @@ module Bytes.Decode.Branchable exposing
     , map, map2, map3, map4, map5
     , keep, ignore, skip
     , andThen, oneOf, repeat, loop
-    , decode
     )
 
 {-| Parse `Bytes` with custom error reporting and context tracking.
@@ -16,7 +15,7 @@ module Bytes.Decode.Branchable exposing
 
 # Running the decoder
 
-@docs Decoder, run
+@docs Decoder, decode
 
 
 # Static decoders
