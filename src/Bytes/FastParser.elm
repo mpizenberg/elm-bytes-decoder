@@ -64,8 +64,8 @@ import Bytes.Decode as Decode exposing (Decoder, Step)
 {-| A parser which tracks a certain type of context, a certain type of error and
 produces a certain type of value.
 -}
-type alias Parser value =
-    State -> Decoder ( State, value )
+type Parser value
+    = Parser (State -> Decoder ( State, value ))
 
 
 type alias State =
@@ -75,13 +75,13 @@ type alias State =
 
 
 succeed : value -> Parser value
-succeed val state =
-    fromDecoder (Decode.succeed val) 0 state
+succeed val =
+    fromDecoder (Decode.succeed val) 0
 
 
 fail : Parser value
-fail state =
-    fromDecoder Decode.fail 0 state
+fail =
+    fromDecoder Decode.fail 0
 
 
 forEver : a -> b
@@ -102,7 +102,7 @@ run parser input =
 
 
 runKeepState : Parser value -> Bytes -> Maybe ( State, value )
-runKeepState parser input =
+runKeepState (Parser parser) input =
     let
         decoder =
             parser { input = input, offset = 0 }
@@ -111,25 +111,35 @@ runKeepState parser input =
 
 
 map : (a -> b) -> Parser a -> Parser b
-map f parser state =
-    parser state
-        |> Decode.map (Tuple.mapSecond f)
+map f (Parser parser) =
+    Parser <|
+        \state ->
+            parser state
+                |> Decode.map (Tuple.mapSecond f)
 
 
 fromDecoder : Decoder v -> Int -> Parser v
-fromDecoder decoder byteLength state =
-    Decode.map
-        (\v -> ( { input = state.input, offset = state.offset + byteLength }, v ))
-        decoder
+fromDecoder decoder byteLength =
+    Parser <|
+        \state ->
+            Decode.map
+                (\v -> ( { input = state.input, offset = state.offset + byteLength }, v ))
+                decoder
 
 
 andThen : (a -> Parser b) -> Parser a -> Parser b
-andThen thenB parser state =
-    parser state
-        |> Decode.andThen
-            (\( newState, a ) ->
-                thenB a newState
-            )
+andThen thenB (Parser parserA) =
+    Parser <|
+        \state ->
+            parserA state
+                |> Decode.andThen
+                    (\( newState, a ) ->
+                        let
+                            (Parser parserB) =
+                                thenB a
+                        in
+                        parserB newState
+                    )
 
 
 map2 : (x -> y -> z) -> Parser x -> Parser y -> Parser z
@@ -156,12 +166,14 @@ map2 f parserX parserY =
 
 
 oneOf : List (Parser value) -> Parser value
-oneOf options ({ input, offset } as state) =
-    oneOfHelper (dropBytes offset input) options state
+oneOf options =
+    Parser <|
+        \state ->
+            oneOfHelper (dropBytes state.offset state.input) options state
 
 
-oneOfHelper : Bytes -> List (Parser value) -> Parser value
-oneOfHelper offsetInput options ({ input, offset } as state) =
+oneOfHelper : Bytes -> List (Parser value) -> State -> Decoder ( State, value )
+oneOfHelper offsetInput options state =
     case options of
         [] ->
             Decode.fail
@@ -170,7 +182,7 @@ oneOfHelper offsetInput options ({ input, offset } as state) =
             case runKeepState parser offsetInput of
                 Just ( newState, value ) ->
                     Decode.bytes newState.offset
-                        |> Decode.map (\_ -> ( { input = input, offset = offset + newState.offset }, value ))
+                        |> Decode.map (\_ -> ( { input = state.input, offset = state.offset + newState.offset }, value ))
 
                 Nothing ->
                     oneOfHelper offsetInput otherParsers state
@@ -188,24 +200,30 @@ dropBytes offset bs =
 
 
 loop : state -> (state -> Parser (Step state a)) -> Parser a
-loop initialState callback initialParserState =
-    let
-        makeParserStep : State -> Step state a -> Step ( state, State ) ( State, a )
-        makeParserStep parserState step =
-            case step of
-                Decode.Loop state ->
-                    Decode.Loop ( state, parserState )
+loop initialState callback =
+    Parser <|
+        \initialParserState ->
+            let
+                makeParserStep : State -> Step state a -> Step ( state, State ) ( State, a )
+                makeParserStep parserState step =
+                    case step of
+                        Decode.Loop state ->
+                            Decode.Loop ( state, parserState )
 
-                Decode.Done a ->
-                    Decode.Done ( parserState, a )
+                        Decode.Done a ->
+                            Decode.Done ( parserState, a )
 
-        loopStep : ( state, State ) -> Decoder (Step ( state, State ) ( State, a ))
-        loopStep ( state, parserState ) =
-            callback state parserState
-                -- Decoder (State, Step state a)
-                |> Decode.map (\( newParserState, step ) -> makeParserStep newParserState step)
-    in
-    Decode.loop ( initialState, initialParserState ) loopStep
+                loopStep : ( state, State ) -> Decoder (Step ( state, State ) ( State, a ))
+                loopStep ( state, parserState ) =
+                    let
+                        (Parser parser) =
+                            callback state
+                    in
+                    parser parserState
+                        -- Decoder (State, Step state a)
+                        |> Decode.map (\( newParserState, step ) -> makeParserStep newParserState step)
+            in
+            Decode.loop ( initialState, initialParserState ) loopStep
 
 
 repeat : Int -> Parser value -> Parser (List value)
