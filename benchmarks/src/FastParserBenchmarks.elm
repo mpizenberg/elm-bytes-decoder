@@ -23,4 +23,4 @@ parseFloatList =
 list : Parser  a -> Parser (List a)
 list decoder =
     Parser.unsignedInt32 Data.endianness
-        |> Parser.andThen (\count -> Parser.repeat decoder count)
+        |> Parser.andThen (\count -> Parser.repeat count decoder)
