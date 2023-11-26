@@ -35,7 +35,7 @@ jobs:
         with:
           cache-key: elm-home-format${{ hashFiles('elm-tooling.json', 'elm.json') }}
           cache-restore-key: elm-home-format
-      - run: elm-format src/ tests/ examples/ --validate
+      - run: elm-format src/ tests/*.elm --validate
 
   review:
     runs-on: ubuntu-latest
